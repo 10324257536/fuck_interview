@@ -735,9 +735,7 @@ export class ProcessingHelper {
 
       // Create prompt for solution generation
       const promptText = `
-请用中文回答以下问题：
 请为以下编程问题生成详细的解决方案：
-
 问题描述:
 ${problemInfo.problem_statement}
 
@@ -753,10 +751,11 @@ ${problemInfo.example_output || "无示例输出"}
 编程语言: ${language}
 
 请按以下格式返回结果：
-1. 代码: 用${language}编写的清晰、优化的实现
-2. 思路分析: 列出关键见解和解题思路
-3. 时间复杂度: O(X) 并附上详细解释(至少2句话)
-4. 空间复杂度: O(X) 并附上详细解释(至少2句话)
+1. 大致解题思路: 在最开始给出整体解题思路，列出步骤比如1234等，不需要代码
+2. 代码: 用${language}编写的清晰、优化的实现，如果最优代码是简单代码的好几倍，请返回简单代码，代码之前给出每个变量的解释，当前数组、元素等变量尽量使用current、prev等变量名，不要使用i、j、k等变量名，变量名不要超过5个字符
+3. 思路分析: 列出关键见解和解题思路
+4. 时间复杂度: O(X) 并附上详细解释(至少2句话)
+5. 空间复杂度: O(X) 并附上详细解释(至少2句话)
 
 对于复杂度分析，请详细说明。例如："时间复杂度: O(n) 因为我们只需要遍历数组一次。这是最优解，因为我们需要至少检查每个元素一次才能找到解决方案。" 或 "空间复杂度: O(n) 因为在最坏情况下，我们需要将所有元素存储在哈希表中。额外空间与输入大小成线性关系。"
 
@@ -823,7 +822,7 @@ ${problemInfo.example_output || "无示例输出"}
           );
 
           const responseData = response.data as GeminiResponse;
-          
+          console.log(JSON.stringify(responseData, null, 2));
           if (!responseData.candidates || responseData.candidates.length === 0) {
             throw new Error("Empty response from Gemini API");
           }
@@ -889,7 +888,11 @@ ${problemInfo.example_output || "无示例输出"}
           };
         }
       }
-      
+
+      // 提取“1. 大致解题思路”段落（从小节标题开始到 **2. 或结尾）
+      const ideaMatch = responseContent.match(/\*\*1\. 大致解题思路:\*\*([\s\S]*?)(?=\n\n\*\*2\.|\Z)/);
+      const ideaSection = ideaMatch ? ideaMatch[1].trim() : '';
+
       // Extract parts from the response
       const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
       const code = codeMatch ? codeMatch[1].trim() : responseContent;
@@ -951,8 +954,23 @@ ${problemInfo.example_output || "无示例输出"}
         }
       }
 
+      function wrapText(text: string, maxLen: number): string {
+        const lines = text.split('\n');
+        const wrapped = lines.map(line => {
+          const chunks: string[] = [];
+          for (let i = 0; i < line.length; i += maxLen) {
+            chunks.push(line.slice(i, i + maxLen));
+          }
+          return chunks.join('\n');
+        });
+        return wrapped.join('\n');
+      }
+
+      const wrappedCodeWithIdea = wrapText(ideaSection, 50);
+      const codeWithIdea = wrappedCodeWithIdea + "\n" + code;
+      // 使用：把 codeWithIdea 按 13 字符换行
       const formattedResponse = {
-        code: code,
+        code: codeWithIdea,
         thoughts: thoughts.length > 0 ? thoughts : ["Solution approach based on efficiency and readability"],
         time_complexity: timeComplexity,
         space_complexity: spaceComplexity
