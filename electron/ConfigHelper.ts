@@ -13,6 +13,10 @@ interface Config {
   debuggingModel: string;
   language: string;
   opacity: number;
+  // 翻译相关配置
+  targetLanguage: string;
+  translationMode: "translate" | "extract" | "both";
+  sourceLanguage: string;
 }
 
 export class ConfigHelper extends EventEmitter {
@@ -24,7 +28,10 @@ export class ConfigHelper extends EventEmitter {
     solutionModel: "gemini-2.0-flash",
     debuggingModel: "gemini-2.0-flash",
     language: "python",
-    opacity: 1.0
+    opacity: 1.0,
+    targetLanguage: "中文",
+    translationMode: "both",
+    sourceLanguage: "auto"
   };
 
   constructor() {
@@ -203,7 +210,9 @@ export class ConfigHelper extends EventEmitter {
       // This prevents re-initializing the AI client when only opacity changes
       if (updates.apiKey !== undefined || updates.apiProvider !== undefined || 
           updates.extractionModel !== undefined || updates.solutionModel !== undefined || 
-          updates.debuggingModel !== undefined || updates.language !== undefined) {
+          updates.debuggingModel !== undefined || updates.language !== undefined ||
+          updates.targetLanguage !== undefined || updates.translationMode !== undefined ||
+          updates.sourceLanguage !== undefined) {
         this.emit('config-updated', newConfig);
       }
       

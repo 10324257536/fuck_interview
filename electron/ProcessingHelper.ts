@@ -477,14 +477,28 @@ export class ProcessingHelper {
         const messages = [
           {
             role: "system" as const, 
-            content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text."
+            content: `你是一个专业的网站内容分析器。分析网站截图，提取所有文本内容并进行翻译和关键信息提取。
+
+翻译模式说明：
+- translate: 仅翻译所有文本内容
+- extract: 仅提取关键信息（标题、重要内容、联系方式等）
+- both: 同时翻译和提取关键信息
+
+请返回JSON格式的结果，包含以下字段：
+- original_text: 原始文本内容
+- translated_text: 翻译后的文本内容（如果模式包含翻译）
+- key_information: 提取的关键信息（如果模式包含提取）
+- detected_language: 检测到的源语言
+- website_type: 网站类型（如新闻、电商、博客等）
+
+目标语言：${config.targetLanguage}，处理模式：${config.translationMode}，源语言：${config.sourceLanguage === 'auto' ? '自动检测' : config.sourceLanguage}。`
           },
           {
             role: "user" as const,
             content: [
               {
                 type: "text" as const, 
-                text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
+                text: `请分析这些网站截图。目标语言：${config.targetLanguage}，处理模式：${config.translationMode}，源语言：${config.sourceLanguage === 'auto' ? '自动检测' : config.sourceLanguage}。`
               },
               ...imageDataList.map(data => ({
                 type: "image_url" as const,
@@ -531,7 +545,21 @@ export class ProcessingHelper {
               role: "user",
               parts: [
                 {
-                  text: `你是一个编程题目解析器。请用中文回答所有问题。分析编程题目截图，提取所有相关信息。返回的结果应为JSON格式，包含以下字段：problem_statement(问题描述)、constraints(约束条件)、example_input(示例输入)、example_output(示例输出)。只返回结构化的JSON，不要包含其他文字。该题目优选的编程语言是${language}`
+                  text: `你是一个专业的网站内容分析器。分析网站截图，提取所有文本内容并进行翻译和关键信息提取。
+
+翻译模式说明：
+- translate: 仅翻译所有文本内容
+- extract: 仅提取关键信息（标题、重要内容、联系方式等）
+- both: 同时翻译和提取关键信息
+
+请返回JSON格式的结果，包含以下字段：
+- original_text: 原始文本内容
+- translated_text: 翻译后的文本内容（如果模式包含翻译）
+- key_information: 提取的关键信息（如果模式包含提取）
+- detected_language: 检测到的源语言
+- website_type: 网站类型（如新闻、电商、博客等）
+
+目标语言：${config.targetLanguage}，处理模式：${config.translationMode}，源语言：${config.sourceLanguage === 'auto' ? '自动检测' : config.sourceLanguage}。`
                 },
                 ...imageDataList.map(data => ({
                   inlineData: {
@@ -589,7 +617,21 @@ export class ProcessingHelper {
               content: [
                 {
                   type: "text" as const,
-                  text: `Extract the coding problem details from these screenshots. Return in JSON format with these fields: problem_statement, constraints, example_input, example_output. Preferred coding language is ${language}.`
+                  text: `你是一个专业的网站内容分析器。分析网站截图，提取所有文本内容并进行翻译和关键信息提取。
+
+翻译模式说明：
+- translate: 仅翻译所有文本内容
+- extract: 仅提取关键信息（标题、重要内容、联系方式等）
+- both: 同时翻译和提取关键信息
+
+请返回JSON格式的结果，包含以下字段：
+- original_text: 原始文本内容
+- translated_text: 翻译后的文本内容（如果模式包含翻译）
+- key_information: 提取的关键信息（如果模式包含提取）
+- detected_language: 检测到的源语言
+- website_type: 网站类型（如新闻、电商、博客等）
+
+目标语言：${config.targetLanguage}，处理模式：${config.translationMode}，源语言：${config.sourceLanguage === 'auto' ? '自动检测' : config.sourceLanguage}。`
                 },
                 ...imageDataList.map(data => ({
                   type: "image" as const,
@@ -678,7 +720,17 @@ export class ProcessingHelper {
         }
       }
 
-      return { success: false, error: "Failed to process screenshots" };
+      // 返回网站分析数据
+      const formattedResponse = {
+        analysis: problemInfo.analysis,
+        original_text: problemInfo.original_text,
+        translated_text: problemInfo.translated_text,
+        key_information: problemInfo.key_information,
+        detected_language: problemInfo.detected_language,
+        website_type: problemInfo.website_type
+      };
+
+      return { success: true, data: formattedResponse };
     } catch (error: any) {
       // If the request was cancelled, don't retry
       if (axios.isCancel(error)) {
@@ -707,10 +759,7 @@ export class ProcessingHelper {
       }
 
       console.error("API Error Details:", error);
-      return { 
-        success: false, 
-        error: error.message || "Failed to process screenshots. Please try again." 
-      };
+      return { success: false, error: error.message || "Failed to process screenshots" };
     }
   }
 
@@ -733,33 +782,34 @@ export class ProcessingHelper {
         });
       }
 
-      // Create prompt for solution generation
+      // Create prompt for detailed analysis
       const promptText = `
-请为以下编程问题生成详细的解决方案：
-问题描述:
-${problemInfo.problem_statement}
+请为以下网站内容生成详细的分析报告：
+原始文本内容:
+${problemInfo.original_text}
 
-约束条件:
-${problemInfo.constraints || "无特定约束条件"}
+翻译后的文本:
+${problemInfo.translated_text}
 
-示例输出:
-${problemInfo.example_input || "无示例输入"}
+关键信息:
+${problemInfo.key_information}
 
-示例输出:
-${problemInfo.example_output || "无示例输出"}
+检测到的源语言:
+${problemInfo.detected_language}
 
-编程语言: ${language}
+网站类型:
+${problemInfo.website_type}
 
 请按以下格式返回结果：
-1. 大致解题思路: 在最开始给出整体解题思路，列出步骤比如1234等，不需要代码
-2. 代码: 用${language}编写的清晰、优化的实现，如果最优代码是简单代码的好几倍，请返回简单代码，代码之前给出每个变量的解释，当前数组、元素等变量尽量使用current、prev等变量名，不要使用i、j、k等变量名，变量名不要超过5个字符
-3. 思路分析: 列出关键见解和解题思路
-4. 时间复杂度: O(X) 并附上详细解释(至少2句话)
-5. 空间复杂度: O(X) 并附上详细解释(至少2句话)
+1. 网站内容分析: 提供对网站内容的详细分析，包括网站结构、内容特点、目标受众等。
+2. 翻译质量评估: 评估翻译的准确性、流畅性和自然性。
+3. 关键信息提取: 总结网站中的重要信息和关键点。
+4. 语言特点分析: 分析网站所使用的语言特点和风格。
+5. 网站优化建议: 根据分析结果提出网站优化的具体建议。
 
-对于复杂度分析，请详细说明。例如："时间复杂度: O(n) 因为我们只需要遍历数组一次。这是最优解，因为我们需要至少检查每个元素一次才能找到解决方案。" 或 "空间复杂度: O(n) 因为在最坏情况下，我们需要将所有元素存储在哈希表中。额外空间与输入大小成线性关系。"
+对于分析，请详细说明。例如："网站内容分析: 该网站是一个新闻网站，主要内容包括政治、经济、文化等方面的新闻报道。" 或 "翻译质量评估: 翻译后的文本保持了原文的语义和风格，但有些地方的翻译不够准确。"
 
-你的解决方案应该高效、注释清晰，并处理边界情况。
+你的分析应该全面、客观，并提供具体的例子和数据支持。
 注意：所有内容必须使用中文回答！
 `;
 
@@ -889,7 +939,7 @@ ${problemInfo.example_output || "无示例输出"}
         }
       }
 
-      // 提取“1. 大致解题思路”段落（从小节标题开始到 **2. 或结尾）
+      // 提取"1. 大致解题思路"段落（从小节标题开始到 **2. 或结尾）
       const ideaMatch = responseContent.match(/\*\*1\. 大致解题思路:\*\*([\s\S]*?)(?=\n\n\*\*2\.|\Z)/);
       const ideaSection = ideaMatch ? ideaMatch[1].trim() : '';
 
