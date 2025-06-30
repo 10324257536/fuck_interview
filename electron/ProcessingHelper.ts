@@ -889,9 +889,28 @@ ${problemInfo.example_output || "无示例输出"}
         }
       }
 
-      // 提取“1. 大致解题思路”段落（从小节标题开始到 **2. 或结尾）
-      const ideaMatch = responseContent.match(/\*\*1\. 大致解题思路:\*\*([\s\S]*?)(?=\n\n\*\*2\.|\Z)/);
+      // 提取"1. 大致解题思路"段落（从小节标题开始到 **2. 或结尾）
+      const ideaMatch = responseContent.match(/\*\*1\. 大致解题思路:\*\*([\s\S]*?)(?=\*\*2\. 代码:|\*\*2\.|$)/);
       const ideaSection = ideaMatch ? ideaMatch[1].trim() : '';
+      
+      // 调试信息
+      console.log("原始 ideaSection:", ideaSection);
+      console.log("ideaSection 长度:", ideaSection.length);
+
+      function splitIdeaByNumbering(text: string): string {
+        if (!text) return '';
+        
+        console.log("处理前的文本:", text);
+        
+        // 简单粗暴的方法：直接在每个数字编号前换行
+        const result = text
+          .replace(/(\d+\.)/g, '\n$1') // 在每个数字编号前加换行
+          .replace(/^\n+/, '') // 去掉开头多余换行
+          .trim();
+          
+        console.log("处理后的文本:", result);
+        return result;
+      }
 
       // Extract parts from the response
       const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
@@ -954,23 +973,9 @@ ${problemInfo.example_output || "无示例输出"}
         }
       }
 
-      function wrapText(text: string, maxLen: number): string {
-        const lines = text.split('\n');
-        const wrapped = lines.map(line => {
-          const chunks: string[] = [];
-          for (let i = 0; i < line.length; i += maxLen) {
-            chunks.push(line.slice(i, i + maxLen));
-          }
-          return chunks.join('\n');
-        });
-        return wrapped.join('\n');
-      }
-
-      const wrappedCodeWithIdea = wrapText(ideaSection, 50);
-      const codeWithIdea = wrappedCodeWithIdea + "\n" + code;
-      // 使用：把 codeWithIdea 按 13 字符换行
       const formattedResponse = {
-        code: codeWithIdea,
+        idea: splitIdeaByNumbering(ideaSection),
+        code: code,
         thoughts: thoughts.length > 0 ? thoughts : ["Solution approach based on efficiency and readability"],
         time_complexity: timeComplexity,
         space_complexity: spaceComplexity

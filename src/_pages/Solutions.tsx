@@ -12,6 +12,11 @@ import Debug from "./Debug"
 import { useToast } from "../contexts/toast"
 import { COMMAND_KEY } from "../utils/platform"
 
+// 处理 ** 之间的文本，用不同颜色显示
+const formatContent = (text: string) => {
+  return text.replace(/\*\*(.*?)\*\*/g, '<span class="text-yellow-300 font-medium">$1</span>');
+};
+
 export const ContentSection = ({
   title,
   content,
@@ -20,24 +25,29 @@ export const ContentSection = ({
   title: string
   content: React.ReactNode
   isLoading: boolean
-}) => (
-  <div className="space-y-2">
-    <h2 className="text-[13px] font-medium text-white tracking-wide">
-      {title}
-    </h2>
-    {isLoading ? (
-      <div className="mt-4 flex">
-        <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
-          Extracting problem statement...
-        </p>
-      </div>
-    ) : (
-      <div className="text-[13px] leading-[1.4] text-gray-100 max-w-[600px]">
-        {content}
-      </div>
-    )}
-  </div>
-)
+}) => {
+  return (
+    <div className="space-y-2">
+      <h2 className="text-[13px] font-medium text-white tracking-wide">
+        {title}
+      </h2>
+      {isLoading ? (
+        <div className="mt-4 flex">
+          <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
+            Extracting problem statement...
+          </p>
+        </div>
+      ) : (
+        <div 
+          className="text-[13px] leading-[1.0] text-gray-100 max-w-[600px] whitespace-pre-wrap"
+          dangerouslySetInnerHTML={{ 
+            __html: typeof content === 'string' ? formatContent(content) : String(content) 
+          }}
+        />
+      )}
+    </div>
+  );
+}
 const SolutionSection = ({
   title,
   content,
@@ -184,6 +194,7 @@ const Solutions: React.FC<SolutionsProps> = ({
   const [problemStatementData, setProblemStatementData] =
     useState<ProblemStatementData | null>(null)
   const [solutionData, setSolutionData] = useState<string | null>(null)
+  const [ideaData, setIdeaData] = useState<string | null>(null)
   const [thoughtsData, setThoughtsData] = useState<string[] | null>(null)
   const [timeComplexityData, setTimeComplexityData] = useState<string | null>(
     null
@@ -191,6 +202,7 @@ const Solutions: React.FC<SolutionsProps> = ({
   const [spaceComplexityData, setSpaceComplexityData] = useState<string | null>(
     null
   )
+  const [isIdeaCollapsed, setIsIdeaCollapsed] = useState(false)
 
   const [isTooltipVisible, setIsTooltipVisible] = useState(false)
   const [tooltipHeight, setTooltipHeight] = useState(0)
@@ -296,11 +308,12 @@ const Solutions: React.FC<SolutionsProps> = ({
       window.electronAPI.onSolutionStart(() => {
         // Every time processing starts, reset relevant states
         setSolutionData(null)
+        setIdeaData(null)
         setThoughtsData(null)
         setTimeComplexityData(null)
         setSpaceComplexityData(null)
       }),
-      window.electronAPI.onProblemExtracted((data) => {
+      window.electronAPI.onProblemExtracted((data: any) => {
         queryClient.setQueryData(["problem_statement"], data)
       }),
       //if there was an error processing the initial solution
@@ -309,6 +322,7 @@ const Solutions: React.FC<SolutionsProps> = ({
         // Reset solutions in the cache (even though this shouldn't ever happen) and complexities to previous states
         const solution = queryClient.getQueryData(["solution"]) as {
           code: string
+          idea: string
           thoughts: string[]
           time_complexity: string
           space_complexity: string
@@ -317,13 +331,14 @@ const Solutions: React.FC<SolutionsProps> = ({
           setView("queue")
         }
         setSolutionData(solution?.code || null)
+        setIdeaData(solution?.idea || null)
         setThoughtsData(solution?.thoughts || null)
         setTimeComplexityData(solution?.time_complexity || null)
         setSpaceComplexityData(solution?.space_complexity || null)
         console.error("Processing error:", error)
       }),
       //when the initial solution is generated, we'll set the solution data to that
-      window.electronAPI.onSolutionSuccess((data) => {
+      window.electronAPI.onSolutionSuccess((data: any) => {
         if (!data) {
           console.warn("Received empty or invalid solution data")
           return
@@ -331,6 +346,7 @@ const Solutions: React.FC<SolutionsProps> = ({
         console.log({ data })
         const solutionData = {
           code: data.code,
+          idea: data.idea,
           thoughts: data.thoughts,
           time_complexity: data.time_complexity,
           space_complexity: data.space_complexity
@@ -338,6 +354,7 @@ const Solutions: React.FC<SolutionsProps> = ({
 
         queryClient.setQueryData(["solution"], solutionData)
         setSolutionData(solutionData.code || null)
+        setIdeaData(solutionData.idea || null)
         setThoughtsData(solutionData.thoughts || null)
         setTimeComplexityData(solutionData.time_complexity || null)
         setSpaceComplexityData(solutionData.space_complexity || null)
@@ -346,13 +363,12 @@ const Solutions: React.FC<SolutionsProps> = ({
         const fetchScreenshots = async () => {
           try {
             const existing = await window.electronAPI.getScreenshots()
-            const screenshots =
-              existing.previews?.map((p) => ({
-                id: p.path,
-                path: p.path,
-                preview: p.preview,
-                timestamp: Date.now()
-              })) || []
+            const screenshots = existing.previews?.map((p: any) => ({
+              id: p.path,
+              path: p.path,
+              preview: p.preview,
+              timestamp: Date.now()
+            })) || []
             setExtraScreenshots(screenshots)
           } catch (error) {
             console.error("Error loading extra screenshots:", error)
@@ -370,7 +386,7 @@ const Solutions: React.FC<SolutionsProps> = ({
         setDebugProcessing(true)
       }),
       //the first time debugging works, we'll set the view to debug and populate the cache with the data
-      window.electronAPI.onDebugSuccess((data) => {
+      window.electronAPI.onDebugSuccess((data: any) => {
         queryClient.setQueryData(["new_solution"], data)
         setDebugProcessing(false)
       }),
@@ -414,12 +430,14 @@ const Solutions: React.FC<SolutionsProps> = ({
       if (event?.query.queryKey[0] === "solution") {
         const solution = queryClient.getQueryData(["solution"]) as {
           code: string
+          idea: string
           thoughts: string[]
           time_complexity: string
           space_complexity: string
         } | null
 
         setSolutionData(solution?.code ?? null)
+        setIdeaData(solution?.idea ?? null)
         setThoughtsData(solution?.thoughts ?? null)
         setTimeComplexityData(solution?.time_complexity ?? null)
         setSpaceComplexityData(solution?.space_complexity ?? null)
@@ -544,6 +562,44 @@ const Solutions: React.FC<SolutionsProps> = ({
                       }
                       isLoading={!thoughtsData}
                     />
+
+                    {ideaData && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h2 className="text-[13px] font-medium text-white tracking-wide">
+                            解题思路
+                          </h2>
+                          <button
+                            onClick={() => setIsIdeaCollapsed(!isIdeaCollapsed)}
+                            className="text-xs text-gray-400 hover:text-white transition-colors flex items-center gap-1"
+                          >
+                            {isIdeaCollapsed ? (
+                              <>
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                                展开
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                </svg>
+                                收起
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        {!isIdeaCollapsed && (
+                          <div 
+                            className="text-[13px] leading-[1.0] text-gray-100 max-w-[600px] whitespace-pre-wrap"
+                            dangerouslySetInnerHTML={{ 
+                              __html: typeof ideaData === 'string' ? formatContent(ideaData) : String(ideaData) 
+                            }}
+                          />
+                        )}
+                      </div>
+                    )}
 
                     <SolutionSection
                       title="Solution"
