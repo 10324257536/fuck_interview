@@ -781,11 +781,11 @@ flag_index 保证每条 MQ 消息只执行一次（消费级幂等），op_index
               <div className="px-4 py-3 space-y-4 max-w-full">
                 {!solutionData && (
                   <>
-                    <ContentSection
+                    {/* <ContentSection
                       title="Problem Statement"
                       content={problemStatementData?.problem_statement}
                       isLoading={!problemStatementData}
-                    />
+                    /> */}
                     {problemStatementData && (
                       <div className="mt-4 flex">
                         <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">

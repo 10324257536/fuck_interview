@@ -5,9 +5,10 @@ import { ScreenshotHelper } from "./ScreenshotHelper"
 import { IProcessingHelperDeps } from "./main"
 import * as axios from "axios"
 import { app, BrowserWindow, dialog } from "electron"
-import { OpenAI } from "openai"
+import OpenAI from "openai"
 import { configHelper } from "./ConfigHelper"
 import Anthropic from '@anthropic-ai/sdk';
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 // Interface for Gemini API requests
 interface GeminiMessage {
@@ -76,10 +77,9 @@ export class ProcessingHelper {
       
       if (config.apiProvider === "openai") {
         if (config.apiKey) {
-          this.openaiClient = new OpenAI({ 
-            apiKey: config.apiKey,
-            timeout: 60000, // 60 second timeout
-            maxRetries: 2   // Retry up to 2 times
+          this.openaiClient = new OpenAI({
+            baseURL: "https://api.deepseek.com",
+            apiKey: config.apiKey
           });
           this.geminiApiKey = null;
           this.anthropicClient = null;
@@ -460,120 +460,84 @@ export class ProcessingHelper {
 
       let problemInfo;
       
-      if (config.apiProvider === "openai") {
-        // Verify OpenAI client
-        if (!this.openaiClient) {
-          this.initializeAIClient(); // Try to reinitialize
-          
-          if (!this.openaiClient) {
-            return {
-              success: false,
-              error: "OpenAI API key not configured or invalid. Please check your settings."
-            };
-          }
+      // 百度 OCR 提取图片文字，提前放在 openai 分支前
+      let problemText = "";
+      if (config.apiProvider === "openai" || config.apiProvider === "gemini") {
+        const AK = "90EAvUrVG2uz2PIdLqCS3WrY";
+        const SK = "p036qatTXl65Crn94nGTjMSkF9HNWF2H";
+        async function getBaiduAccessToken() {
+          const url = `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${AK}&client_secret=${SK}`;
+          const res = await axios.default.post(url);
+          return res.data.access_token;
         }
-
-        // Use OpenAI for processing
-        const messages = [
-          {
-            role: "system" as const, 
-            content: "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text."
-          },
-          {
-            role: "user" as const,
-            content: [
-              {
-                type: "text" as const, 
-                text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
-              },
-              ...imageDataList.map(data => ({
-                type: "image_url" as const,
-                image_url: { url: `data:image/png;base64,${data}` }
-              }))
-            ]
-          }
-        ];
-
-        // Send to OpenAI Vision API
-        const extractionResponse = await this.openaiClient.chat.completions.create({
-          model: config.extractionModel || "gpt-4o",
-          messages: messages,
-          max_tokens: 4000,
-          temperature: 0.2
-        });
-
-        // Parse the response
-        try {
-          const responseText = extractionResponse.choices[0].message.content;
-          // Handle when OpenAI might wrap the JSON in markdown code blocks
-          const jsonText = responseText.replace(/```json|```/g, '').trim();
-          problemInfo = JSON.parse(jsonText);
-        } catch (error) {
-          console.error("Error parsing OpenAI response:", error);
-          return {
-            success: false,
-            error: "Failed to parse problem information. Please try again or use clearer screenshots."
-          };
-        }
-      } else if (config.apiProvider === "gemini")  {
-        // Use Gemini API
-        if (!this.geminiApiKey) {
-          return {
-            success: false,
-            error: "Gemini API key not configured. Please check your settings."
-          };
-        }
-
-        try {
-          // Create Gemini message structure
-          const geminiMessages: GeminiMessage[] = [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `你是一个编程题目解析器。请用中文回答所有问题。分析编程题目截图，提取所有相关信息。返回的结果应为JSON格式，包含以下字段：problem_statement(问题描述)、constraints(约束条件)、example_input(示例输入)、example_output(示例输出)。只返回结构化的JSON，不要包含其他文字。该题目优选的编程语言是${language}`
-                },
-                ...imageDataList.map(data => ({
-                  inlineData: {
-                    mimeType: "image/png",
-                    data: data
-                  }
-                }))
-              ]
+        async function baiduOcrImage(base64: string, accessToken: string) {
+          const url = `https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic?access_token=${accessToken}`;
+          const res = await axios.default.post(url, `image=${encodeURIComponent(base64)}`, {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Accept': 'application/json'
             }
-          ];
-
-          // Make API request to Gemini
-          const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
-            {
-              contents: geminiMessages,
-              generationConfig: {
-                temperature: 0.2,
-                maxOutputTokens: 4000
-              }
-            },
-            { signal }
-          );
-
-          const responseData = response.data as GeminiResponse;
-          
-          if (!responseData.candidates || responseData.candidates.length === 0) {
-            throw new Error("Empty response from Gemini API");
-          }
-          
-          const responseText = responseData.candidates[0].content.parts[0].text;
-          
-          // Handle when Gemini might wrap the JSON in markdown code blocks
-          const jsonText = responseText.replace(/```json|```/g, '').trim();
-          problemInfo = JSON.parse(jsonText);
-        } catch (error) {
-          console.error("Error using Gemini API:", error);
-          return {
-            success: false,
-            error: "Failed to process with Gemini API. Please check your API key or try again later."
-          };
+          });
+          return res.data;
         }
+        const accessToken = await getBaiduAccessToken();
+        let allWords: string[] = [];
+        for (const base64 of imageDataList) {
+          const ocrResult = await baiduOcrImage(base64, accessToken);
+          if (ocrResult.words_result && Array.isArray(ocrResult.words_result)) {
+            allWords.push(...ocrResult.words_result.map((w: any) => w.words));
+          }
+        }
+        problemText = allWords.filter(line => line.trim() !== '').join(' ');
+      }
+      if (config.apiProvider === "openai") {
+        // 直接用百度OCR提取的内容作为题目内容
+        problemInfo = {
+          problem_statement: problemText,
+          constraints: '',
+          example_input: '',
+          example_output: ''
+        };
+      } else if (config.apiProvider === "gemini")  {
+        // 用百度 OCR 替换 Gemini API 调用
+        // 百度 OCR 配置
+        // const AK = "90EAvUrVG2uz2PIdLqCS3WrY";
+        // const SK = "p036qatTXl65Crn94nGTjMSkF9HNWF2H";
+        // async function getBaiduAccessToken() {
+        //   const url = `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${AK}&client_secret=${SK}`;
+        //   const res = await axios.default.post(url);
+        //   return res.data.access_token;
+        // }
+        // async function baiduOcrImage(base64: string, accessToken: string) {
+        //   const url = `https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic?access_token=${accessToken}`;
+        //   const res = await axios.default.post(url, `image=${encodeURIComponent(base64)}`, {
+        //     headers: {
+        //       'Content-Type': 'application/x-www-form-urlencoded',
+        //       'Accept': 'application/json'
+        //     }
+        //   });
+        //   return res.data;
+        // }
+        // // 获取 access_token
+        // const accessToken = await getBaiduAccessToken();
+        // // 识别所有图片
+        // let allWords: string[] = [];
+        // for (const base64 of imageDataList) {
+        //   const ocrResult = await baiduOcrImage(base64, accessToken);
+        //   if (ocrResult.words_result && Array.isArray(ocrResult.words_result)) {
+        //     allWords.push(...ocrResult.words_result.map((w: any) => w.words));
+        //   }
+        // }
+        // // 拼接所有识别文字，去掉空行
+        // const problemText = allWords.filter(line => line.trim() !== '').join('\n');
+        // console.log('百度OCR提取的题目内容：', problemText);
+        // // 构造 problemInfo
+        // problemInfo = {
+        //   problem_statement: problemText,
+        //   constraints: '',
+        //   example_input: '',
+        //   example_output: ''
+        // };
       } else if (config.apiProvider === "anthropic") {
         if (!this.anthropicClient) {
           return {
@@ -773,19 +737,29 @@ ${problemInfo.example_output || "无示例输出"}
             error: "OpenAI API key not configured. Please check your settings."
           };
         }
-        
+        console.log('promptText: ', promptText);
         // Send to OpenAI API
-        const solutionResponse = await this.openaiClient.chat.completions.create({
-          model: config.solutionModel || "gpt-4o",
-          messages: [
-            { role: "system", content: "You are an expert coding interview assistant. Provide clear, optimal solutions with detailed explanations." },
-            { role: "user", content: promptText }
-          ],
-          max_tokens: 4000,
-          temperature: 0.2
-        });
-
-        responseContent = solutionResponse.choices[0].message.content;
+        const axios = require('axios');
+        const solutionResponse = await axios.post(
+          'https://api.deepseek.com/chat/completions',
+          {
+            model: 'deepseek-chat',
+            messages: [
+              { role: 'system', content: 'You are a helpful assistant.' },
+              { role: 'user', content: promptText }
+            ],
+            stream: false
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer sk-fb0700e9db384979bb3b545f93570bd1',              
+            },
+            timeout: 60000 // 1分钟超时
+          }
+        );
+        console.log('solutionResponse:', solutionResponse.data.choices);
+        responseContent = solutionResponse.data.choices[0].message.content;
       } else if (config.apiProvider === "gemini")  {
         // Gemini processing
         if (!this.geminiApiKey) {
@@ -925,13 +899,13 @@ ${problemInfo.example_output || "无示例输出"}
         // Extract bullet points or numbered items
         const bulletPoints = thoughtsMatch[1].match(/(?:^|\n)\s*(?:[-*•]|\d+\.)\s*(.*)/g);
         if (bulletPoints) {
-          thoughts = bulletPoints.map(point => 
-            point.replace(/^\s*(?:[-*•]|\d+\.)\s*/, '').trim()
+          thoughts = bulletPoints.map((point: string) => 
+            point.replace(/^	*(?:[-*•]|\d+\.)\s*/, '').trim()
           ).filter(Boolean);
         } else {
           // If no bullet points found, split by newlines and filter empty lines
           thoughts = thoughtsMatch[1].split('\n')
-            .map((line) => line.trim())
+            .map((line: string) => line.trim())
             .filter(Boolean);
         }
       }
