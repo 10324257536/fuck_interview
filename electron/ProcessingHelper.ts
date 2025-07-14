@@ -724,7 +724,7 @@ ${problemInfo.example_output || "无示例输出"}
 对于复杂度分析，请详细说明。例如："时间复杂度: O(n) 因为我们只需要遍历数组一次。这是最优解，因为我们需要至少检查每个元素一次才能找到解决方案。" 或 "空间复杂度: O(n) 因为在最坏情况下，我们需要将所有元素存储在哈希表中。额外空间与输入大小成线性关系。"
 
 你的解决方案应该高效、注释清晰，并处理边界情况。
-注意：所有内容必须使用中文回答！
+注意：所有内容必须使用中文回答！返回结果里不要带"+"号
 `;
 
       let responseContent;
@@ -738,6 +738,20 @@ ${problemInfo.example_output || "无示例输出"}
           };
         }
         console.log('promptText: ', promptText);
+        let fixedPromptText = promptText + `请用以下固定结构回答：
+### 大致解题思路
+[你的解题思路]（必须用这个标题，不要用其他名称）
+
+### 代码实现
+[代码示例]
+
+### 复杂度分析
+**时间复杂度: O(n)** 
+[分析内容]
+**空间复杂度: O(n)**
+[分析内容]
+（必须用这个格式）
+`
         // Send to OpenAI API
         const axios = require('axios');
         const solutionResponse = await axios.post(
@@ -746,7 +760,7 @@ ${problemInfo.example_output || "无示例输出"}
             model: 'deepseek-chat',
             messages: [
               { role: 'system', content: 'You are a helpful assistant.' },
-              { role: 'user', content: promptText }
+              { role: 'user', content: fixedPromptText }
             ],
             stream: false
           },
@@ -864,9 +878,17 @@ ${problemInfo.example_output || "无示例输出"}
       }
 
       // 提取"1. 大致解题思路"段落（从小节标题开始到 **2. 或结尾）
-      const ideaMatch = responseContent.match(/\*\*1\. 大致解题思路:\*\*([\s\S]*?)(?=\*\*2\. 代码:|\*\*2\.|$)/);
-      const ideaSection = ideaMatch ? ideaMatch[1].trim() : '';
-      
+      let ideaSection = '';
+      console.log('responseContent:', responseContent);
+      if (config.apiProvider === 'openai') {
+        // 兼容 markdown 标题的宽松正则
+        const ideaMatch = responseContent.match(/###\s*大致解题思路\s*\n+([\s\S]*?)(?=\s*###\s*(?:代码实现|2\.\s*代码|时间复杂度))/i);
+        ideaSection = ideaMatch ? ideaMatch[1].trim() : '';
+      } else {
+        // 原有的加粗小节标题正则
+        const ideaMatch = responseContent.match(/\*\*1\. 大致解题思路:\*\*([\s\S]*?)(?=\*\*2\. 代码:|\*\*2\.|$)/);
+        ideaSection = ideaMatch ? ideaMatch[1].trim() : '';
+      }
       // 调试信息
       console.log("原始 ideaSection:", ideaSection);
       console.log("ideaSection 长度:", ideaSection.length);
@@ -911,38 +933,46 @@ ${problemInfo.example_output || "无示例输出"}
       }
       
       // Extract complexity information
-      const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
-      const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z]|$))/i;
-      
       let timeComplexity = "O(n) - Linear time complexity because we only iterate through the array once. Each element is processed exactly one time, and the hashmap lookups are O(1) operations.";
       let spaceComplexity = "O(n) - Linear space complexity because we store elements in the hashmap. In the worst case, we might need to store all elements before finding the solution pair.";
-      
-      const timeMatch = responseContent.match(timeComplexityPattern);
-      if (timeMatch && timeMatch[1]) {
-        timeComplexity = timeMatch[1].trim();
-        if (!timeComplexity.match(/O\([^)]+\)/i)) {
-          timeComplexity = `O(n) - ${timeComplexity}`;
-        } else if (!timeComplexity.includes('-') && !timeComplexity.includes('because')) {
-          const notationMatch = timeComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = timeComplexity.replace(notation, '').trim();
-            timeComplexity = `${notation} - ${rest}`;
+
+      if (config.apiProvider === 'openai') {
+        // openai: 兼容 markdown 三级标题
+        const timeMatch = responseContent.match(/(\*\*)?时间\s*复杂\s*度\s*:?\s*(\*\*)?\s*O\([^)]+\)\s*(\*\*)?\s*\n([\s\S]*?)(?=\s*(?:空间|###|$))/i);
+        timeComplexity = timeMatch ? `时间复杂度: ${timeMatch[0].match(/O\([^)]+\)/)[0]}\n${timeMatch[4].trim()}` : "未匹配到时间复杂度";
+        
+        const spaceMatch = responseContent.match(/(\*\*)?空间\s*复杂\s*度\s*:?\s*(\*\*)?\s*O\([^)]+\)\s*(\*\*)?\s*\n([\s\S]*?)(?=\s*###|$)/i);
+        spaceComplexity = spaceMatch ? `空间复杂度: ${spaceMatch[0].match(/O\([^)]+\)/)[0]}\n${spaceMatch[4].trim()}` : "未匹配到空间复杂度";
+      } else {
+        // 其他模型: 保持原有逻辑
+        const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
+        const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z]|$))/i;
+        const timeMatch = responseContent.match(timeComplexityPattern);
+        if (timeMatch && timeMatch[1]) {
+          timeComplexity = timeMatch[1].trim();
+          if (!timeComplexity.match(/O\([^)]+\)/i)) {
+            timeComplexity = `O(n) - ${timeComplexity}`;
+          } else if (!timeComplexity.includes('-') && !timeComplexity.includes('because')) {
+            const notationMatch = timeComplexity.match(/O\([^)]+\)/i);
+            if (notationMatch) {
+              const notation = notationMatch[0];
+              const rest = timeComplexity.replace(notation, '').trim();
+              timeComplexity = `${notation} - ${rest}`;
+            }
           }
         }
-      }
-      
-      const spaceMatch = responseContent.match(spaceComplexityPattern);
-      if (spaceMatch && spaceMatch[1]) {
-        spaceComplexity = spaceMatch[1].trim();
-        if (!spaceComplexity.match(/O\([^)]+\)/i)) {
-          spaceComplexity = `O(n) - ${spaceComplexity}`;
-        } else if (!spaceComplexity.includes('-') && !spaceComplexity.includes('because')) {
-          const notationMatch = spaceComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = spaceComplexity.replace(notation, '').trim();
-            spaceComplexity = `${notation} - ${rest}`;
+        const spaceMatch = responseContent.match(spaceComplexityPattern);
+        if (spaceMatch && spaceMatch[1]) {
+          spaceComplexity = spaceMatch[1].trim();
+          if (!spaceComplexity.match(/O\([^)]+\)/i)) {
+            spaceComplexity = `O(n) - ${spaceComplexity}`;
+          } else if (!spaceComplexity.includes('-') && !spaceComplexity.includes('because')) {
+            const notationMatch = spaceComplexity.match(/O\([^)]+\)/i);
+            if (notationMatch) {
+              const notation = notationMatch[0];
+              const rest = spaceComplexity.replace(notation, '').trim();
+              spaceComplexity = `${notation} - ${rest}`;
+            }
           }
         }
       }

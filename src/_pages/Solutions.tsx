@@ -109,32 +109,6 @@ const SolutionSection = ({
       </h2>
       {/* 搜索输入框 */}
       <div className="mb-2 flex items-center gap-2">
-        <input
-          type="text"
-          placeholder="Search in code..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              setTimeout(() => {
-                const el = document.getElementById('code-search-match');
-                if (el) {
-                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-              }, 0);
-            }
-          }}
-          className="px-2 py-1 rounded bg-white/10 text-white text-xs border border-white/20 focus:outline-none focus:ring-2 focus:ring-yellow-300"
-          style={{ width: 180 }}
-        />
-        {searchTerm && (
-          <button
-            onClick={() => setSearchTerm("")}
-            className="text-xs text-gray-300 hover:text-white"
-          >
-            Clear
-          </button>
-        )}
         <button
           onClick={() => setIsScrollable((prev) => !prev)}
           className="text-xs text-gray-300 hover:text-white border border-white/20 rounded px-2 py-1 bg-white/5"
