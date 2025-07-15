@@ -110,6 +110,13 @@ export class ConfigHelper extends EventEmitter {
           config.debuggingModel = this.sanitizeModelSelection(config.debuggingModel, config.apiProvider);
         }
         
+        // 在 loadConfig() 返回时根据 provider 写死 key
+        if (config.apiProvider === 'openai') {
+          config.apiKey = 'sk-8b2e0ec3e8eb44f1b16a7d988547abe5';
+        } else if (config.apiProvider === 'gemini') {
+          config.apiKey = 'AIzaSyADfLvx3oscMgvQffvzV7qXTolxKpIauWw';
+        }
+        
         return {
           ...this.defaultConfig,
           ...config
@@ -196,7 +203,17 @@ export class ConfigHelper extends EventEmitter {
         updates.debuggingModel = this.sanitizeModelSelection(updates.debuggingModel, provider);
       }
       
-      const newConfig = { ...currentConfig, ...updates };
+      // 2. updateConfig 忽略 apiKey 的更新
+      const { apiKey, ...rest } = updates;
+      const newConfig = { ...currentConfig, ...rest };
+
+      // 仍然根据 provider 写死 key
+      if (newConfig.apiProvider === 'openai') {
+        newConfig.apiKey = 'sk-8b2e0ec3e8eb44f1b16a7d988547abe5';
+      } else if (newConfig.apiProvider === 'gemini') {
+        newConfig.apiKey = 'AIzaSyADfLvx3oscMgvQffvzV7qXTolxKpIauWw';
+      }
+
       this.saveConfig(newConfig);
       
       // Only emit update event for changes other than opacity

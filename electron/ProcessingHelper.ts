@@ -462,7 +462,7 @@ export class ProcessingHelper {
       
       // 百度 OCR 提取图片文字，提前放在 openai 分支前
       let problemText = "";
-      if (config.apiProvider === "openai" || config.apiProvider === "gemini") {
+      if (config.apiProvider === "openai") {
         const AK = "90EAvUrVG2uz2PIdLqCS3WrY";
         const SK = "p036qatTXl65Crn94nGTjMSkF9HNWF2H";
         async function getBaiduAccessToken() {
@@ -499,7 +499,66 @@ export class ProcessingHelper {
           example_output: ''
         };
       } else if (config.apiProvider === "gemini")  {
-        // 用百度 OCR 替换 Gemini API 调用
+        {
+          // Use Gemini API
+          if (!this.geminiApiKey) {
+            return {
+              success: false,
+              error: "Gemini API key not configured. Please check your settings."
+            };
+          }
+  
+          try {
+            // Create Gemini message structure
+            const geminiMessages: GeminiMessage[] = [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: `你是一个编程题目解析器。请用中文回答所有问题。分析编程题目截图，提取所有相关信息。返回的结果应为JSON格式，包含以下字段：problem_statement(问题描述)、constraints(约束条件)、example_input(示例输入)、example_output(示例输出)。只返回结构化的JSON，不要包含其他文字。该题目优选的编程语言是${language}`
+                  },
+                  ...imageDataList.map(data => ({
+                    inlineData: {
+                      mimeType: "image/png",
+                      data: data
+                    }
+                  }))
+                ]
+              }
+            ];
+  
+            // Make API request to Gemini
+            const response = await axios.default.post(
+              `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+              {
+                contents: geminiMessages,
+                generationConfig: {
+                  temperature: 0.2,
+                  maxOutputTokens: 4000
+                }
+              },
+              { signal }
+            );
+  
+            const responseData = response.data as GeminiResponse;
+            
+            if (!responseData.candidates || responseData.candidates.length === 0) {
+              throw new Error("Empty response from Gemini API");
+            }
+            
+            const responseText = responseData.candidates[0].content.parts[0].text;
+            
+            // Handle when Gemini might wrap the JSON in markdown code blocks
+            const jsonText = responseText.replace(/```json|```/g, '').trim();
+            problemInfo = JSON.parse(jsonText);
+          } catch (error) {
+            console.error("Error using Gemini API:", error);
+            return {
+              success: false,
+              error: "Failed to process with Gemini API. Please check your API key or try again later."
+            };
+          }
+        }
         // 百度 OCR 配置
         // const AK = "90EAvUrVG2uz2PIdLqCS3WrY";
         // const SK = "p036qatTXl65Crn94nGTjMSkF9HNWF2H";
